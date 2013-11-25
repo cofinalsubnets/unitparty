@@ -66,6 +66,9 @@ tests = TestList [
   , "milligram*hours" -/> "gigawebers/micron" ~? "incommensurable units"
   , "shekels/coulomb" --> "kilotesla*fortnights" ~? "commensurable units"
   , "meters^6/second^2" --> "sverdrup^2" ~? "commensurables w/ exponentiation"
+  , "furlong*hour^-2" --> "metre/second^2" ~? "division"
+  , "(meter/second)^2" --> "meter^2/second^2" ~? "grouping with parentheses"
+  , "second*(grain*mile)" --> "gram*year*metre" ~? "more grouping"
   ]
 
 

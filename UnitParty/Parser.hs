@@ -11,16 +11,9 @@ import Data.Char (toLower)
 
 import qualified Data.Map as M
 
-data Token = TUnit String Int | TUnit' Unit | TOp Op | TPOpen | TPClose | TGrp [Token]
+data Token = TUnit String | TUnit' Unit | TOp Op
+           | TExp Int | TPOpen | TPClose | TGrp [Token]
 data Op = Mul | Div
-
-instance Show Token where
-  show (TUnit s i) = s ++ "^" ++ show i
-  show (TUnit' u)  = "unit"
-  show (TOp Mul) = "*"
-  show (TOp Div) = "*"
-  show TPOpen = "("
-  show TPClose = ")"
 
 -- parser for units that handles:
 -- 1. names in the `units' map exported by Units
@@ -32,7 +25,7 @@ parseUnit s = case lexUnit $ map toLower s of
   Left _ -> Left $ SyntaxError s
   Right toks -> mapM getUnit toks
             >>= group [TGrp []]
-            >>= unify
+            >>= unify . expify
             >>= \(TUnit' u) -> return u
   where
 
@@ -43,7 +36,12 @@ parseUnit s = case lexUnit $ map toLower s of
     group [(TGrp t)] [] = return $ reverse t
     group _ _ = Left $ MismatchedParens s
 
+    expify (TUnit' u:TExp x:ts) = expify $ TUnit' (u**~x):ts
+    expify (t:ts) = t:expify ts
+    expify [] = []
+
     unify ((TGrp g):ts) = unify g >>= unify . (:ts)
+    unify (TUnit' u : TExp x :ts) = unify $ TUnit' (u**~x) : ts
     unify (TUnit' u : TOp o : t : ts) = case t of
       TGrp g -> unify g >>= \g' -> unify $ TUnit' u : TOp o : g' : ts
       TUnit' u' -> let op = case o of { Mul -> (*~); Div -> (/~) } in
@@ -53,9 +51,9 @@ parseUnit s = case lexUnit $ map toLower s of
     unify [u@(TUnit' _)] = return u
     unify _ = Left $ SyntaxError s
 
-    getUnit (TUnit u i) =  fmap (TUnit' . (**~i)) (getUnit' u)
-                       <?> (getPrefix u >>= \(p,u') ->
-                            fmap (TUnit' . (**~i) . p) (getUnit' u'))
+    getUnit (TUnit u) =  fmap TUnit' (getUnit' u)
+                     <?> (getPrefix u >>= \(p,u') ->
+                          fmap (TUnit' . p) (getUnit' u'))
       where
         getUnit' s = case M.lookup s units of
           Nothing -> Left $ UnknownUnit s
@@ -86,16 +84,11 @@ parseAmount a = case parse amount "" a of
 -- lexer used by parseUnit
 lexUnit :: String -> Either ParseError [Token]
 lexUnit = flip parse "" $
-  spaces >> (unit <|> op <|> paren) `sepEndBy` spaces
+  spaces >> (unit <|> op <|> exp <|> paren) `sepEndBy` spaces
   where
-    unit = try expUnit <|> simpleUnit
-    simpleUnit = many1 letter >>= \n -> return $ TUnit n 1
-    expUnit = do
-      TUnit n x <- simpleUnit
-      char '^'
-      i <- int
-      return $ TUnit n (i*x)
+    unit = many1 letter >>= return . TUnit
 
+    exp = char '^' >> spaces >> int >>= return . TExp
     op =  (char '*' >> return (TOp Mul))
       <|> (char '/' >> return (TOp Div))
 
