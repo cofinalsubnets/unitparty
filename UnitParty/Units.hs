@@ -47,7 +47,7 @@ s **~ x
 
 -- unit inversion, as in 1/second
 uInvert :: Unit -> Unit
-uInvert (U u) = U $ M.mapKeys (\(D d) -> D $ M.map negate d) u
+uInvert (U u) = U $ M.map (1/) $ M.mapKeys (\(D d) -> D $ M.map negate d) u
 
 
 -- helpers for defining units
@@ -118,7 +118,7 @@ cubit   = constant 18 *~ inch
 ell     = constant 45 *~ inch
 finger  = constant (7/8) *~ inch
 fermi   = constant (10 ** (-15)) *~ metre
-micron  = constant (10 ** (-6)) *~ inch
+micron  = constant (10 ** (-6)) *~ metre
 
 -- area
 perch    = rod **~ 2
@@ -190,8 +190,8 @@ guntha   = constant 121 *~ yard **~ 2   -- indian
 bar   = constant 100000 *~ pascal
 barye = constant (1/10) *~ kilogram /~ (metre *~ second **~ 2)
 mmHg  = constant 133.322387415 *~ pascal
-torr  = constant (1/670) *~ atmosphere
-atmosphere = constant 101325 *~ pascal
+torr  = constant 101325 *~ pascal
+atmosphere = constant 760 *~ torr
 -- energy
 erg = constant (10 ** (-7)) *~ joule
 electronVolt = constant (1.602176565 * 10 ** (-19)) *~ joule
