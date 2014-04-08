@@ -23,7 +23,7 @@ data Opts = Opts { from    :: Maybe NamedUnit
 data Action = Convert NamedUnit NamedUnit Double
             | Analyze NamedUnit | List | DYK | Help
 
-data NamedUnit = NU { unit :: Unit, name :: String }
+data NamedUnit = NU { name :: String, unit :: Unit }
 
 main :: IO ()
 main = getArgs >>= \args -> case parseArgs args of
@@ -56,43 +56,40 @@ parseArgs args = case getOpt Permute options args of
 
     checkList o l = if list o then return (List:l) else return l
     checkDyk  o l = if dyk  o then return (DYK:l)  else return l
-    checkAna  o l = case analyze o of
-      Nothing -> return l
-      Just u -> return (Analyze u:l)
+    checkAna  o l = return $ maybe l ((:l) . Analyze) (analyze o)
     checkConv o l = if conversion o then do f <- checkPresent (from o)   "from"
                                             t <- checkPresent (to o)     "to"
                                             return $ Convert f t (amount o) : l
-                    else return l
+                                    else return l
 
 doAction :: Action -> IO ()
+doAction action = case action of
 
-doAction Help = usage >>= putStr
-doAction (Convert f t a) = case convert (unit f) (unit t) of
-  Left err -> doError $ show err
-  Right c ->  putStrLn $ unwords [show a, name f, "=", show $ c a, name t]
+  Help -> usage >>= putStr
 
-doAction List = mapM_ putStrLn $ M.keys baseUnits
+  Convert f t a -> case convert (unit f) (unit t) of
+    Left err -> doError $ show err
+    Right c  -> putStrLn $ unwords [show a, name f, "=", show $ c a, name t]
 
-doAction (Analyze u) = putStrLn $
-  name u ++ ": " ++ show (fst . (\(U u) -> M.findMax u) $ unit u)
+  List -> mapM_ putStrLn $ M.keys baseUnits
 
-doAction DYK = do
-  (u1,u2) <- randomUnits
-  putStrLn "Did you know ..."
-  putStr "  "
-  doAction $ Convert u1 u2 1
-  where
-    pluralList = M.toList pluralUnits
-    baseList   = M.toList baseUnits
-    randomUnit l = randomRIO (0, length l - 1) >>= \i ->
-      let (n, u) = l !! i in return $ NU u n
-    randomUnits = do
-      u  <- randomUnit baseList
-      u' <- randomUnit pluralList
+  Analyze u -> putStrLn $
+    name u ++ ": " ++ show (fst . (\(U u) -> M.findMax u) $ unit u)
 
-      if equidimensional (unit u) (unit u')
-        then return (u,u')
-        else randomUnits
+  DYK -> do
+    (u1, u2) <- randomUnits
+    putStrLn "Did you know ..."
+    putStr "  "
+    doAction $ Convert u1 u2 1
+    where
+      randomUnits = do
+        u1@(NU _ a) <- randomUnit baseList
+        u2@(NU _ b) <- randomUnit pluralList
+        if equidimensional a b then return (u1, u2) else randomUnits
+      randomUnit l = randomRIO (0, length l - 1) >>= return . uncurry NU . (l!!)
+      pluralList = M.toList pluralUnits
+      baseList   = M.toList baseUnits
+
 
 defaults :: Opts
 defaults = Opts Nothing Nothing 1 Nothing False False False False
@@ -109,13 +106,14 @@ options =
   ]
   where
     setFrom f o = getParsed parseUnit f >>= \u ->
-                    return o{from = Just $ NU u f} >>= setConv
+                    return o{from = Just $ NU f u} >>= setConv
     setTo t o   = getParsed parseUnit t >>= \u ->
-                    return o{to = Just $ NU u t} >>= setConv
+                    return o{to = Just $ NU t u} >>= setConv
     setAmt a o  = getParsed parseAmount a >>= \a ->
                     return o{amount = a} >>= setConv
     setAna a o  = getParsed parseUnit a >>= \u ->
-                    return o{analyze = Just $ NU u a}
+                    return o{analyze = Just $ NU a u}
+
     setDyk  o = return o{dyk=True}
     setList o = return o{list=True}
     setHelp o = return o{help=True}

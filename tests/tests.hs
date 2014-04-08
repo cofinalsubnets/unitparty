@@ -17,9 +17,7 @@ main = do
   putStrLn "running HUnit ..."
   huresults <- runTestTT tests
   when (any isFailure qcresults || failures huresults /= 0) exitFailure
-  where
-    isFailure (Failure {}) = True
-    isFailure _ = False
+  where isFailure x = case x of { Failure {} -> True; _ -> False }
 
 
 -- QuickCheck
@@ -34,8 +32,7 @@ instance Arbitrary Unit where
   -- just pick one from the units list, we ain't fancy
   arbitrary = elements $ M.elems baseUnits
 
-instance CoArbitrary Unit where
-  coarbitrary = coarbitraryShow -- :P
+instance CoArbitrary Unit where coarbitrary = coarbitraryShow -- :P
 
 commensurability u1 u2 = equidimensional u1 u2 ==>
   isRight (convert u1 u2)
@@ -50,13 +47,8 @@ conversion a@(U u1) b@(U u2) = equidimensional a b ==>
       Right conv      = convert a b
   in conv 100 == ((100 - c1) * coeff1) / coeff2 + c2
 
-isRight (Right _) = True
-isRight _ = False
-
-isLeft (Left _) = True
-isLeft _ = False
-
-
+isRight x = case x of { Right _ -> True; _ -> False }
+isLeft = not . isRight
 
 
 -- HUnit
@@ -69,6 +61,8 @@ tests = TestList [
   , "furlong*hour^-2" --> "metre/second^2" ~? "division"
   , "(meter/second)^2" --> "meter^2/second^2" ~? "grouping with parentheses"
   , "second*(grain*mile)" --> "gram*year*metre" ~? "more grouping"
+  , "(((second/hour)))" --> "meter/(megafoot)" ~? "nested parens"
+  , "second * meter * mile / watt" --> "years^2*inches^2/joule" ~? "multiple ops"
   ]
 
 
@@ -86,13 +80,10 @@ infixl 5 =~
 infixl 6 -->, -/>
 
 (=~) :: Double -> Double -> Bool
-(=~) = inDelta (10 ** (-6)) -- arbitrary
-  where inDelta d f1 f2 = abs (f1 - f2) < d
+(=~) = inDelta (10 ** (-6)) where inDelta d f1 f2 = abs (f1 - f2) < d
 
 (-/>) :: String -> String -> Bool
-f -/> t = case convert (unit f) (unit t) of
-  Left _ -> True
-  _ -> False
+f -/> t = isLeft $ convert (unit f) (unit t)
 
 (-->) :: String -> String -> Bool
 f --> t = not $ f -/> t

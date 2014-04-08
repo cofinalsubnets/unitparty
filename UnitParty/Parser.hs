@@ -6,73 +6,44 @@ import UnitParty.Units
 import Text.ParserCombinators.Parsec hiding ((<|>))
 import Control.Applicative hiding (many, optional)
 import Control.Monad ((>=>))
-import Data.List (stripPrefix)
+import Data.List (find, isPrefixOf, stripPrefix)
 import Data.Char (toLower)
 
 import qualified Data.Map as M
 
-data Token = TUnit String | TUnit' Unit | TOp Op
-           | TExp Int | TPOpen | TPClose | TGrp [Token]
-data Op = Mul | Div
-
--- parser for units that handles:
--- 1. names in the `units' map exported by Units
--- 2. names with metric prefixes like "giga" and "femto"
--- 3. algebraic units like furlongs / hour^3
--- 4. grouping with parentheses.
-parseUnit :: String -> Either UParseError Unit
-parseUnit s = case lexUnit $ map toLower s of
-  Left _ -> Left $ SyntaxError s
-  Right toks -> mapM getUnit toks
-            >>= group [TGrp []]
-            >>= unify . expify
-            >>= \(TUnit' u) -> return u
+parseUnit :: String -> Either ParseError Unit
+parseUnit = parse (unit <* eof) "" . map toLower
   where
+    unit = spaces *> (compound <|> group <|> simple) <* spaces
 
-    group gs (TPOpen:ts) = group (TGrp []:gs) ts
-    group ((TGrp g1):TGrp g2:gs) (TPClose:ts) = 
-      group (TGrp (TGrp (reverse g1):g2):gs) ts
-    group (TGrp g:gs) (t:ts) = group (TGrp (t:g):gs) ts
-    group [(TGrp t)] [] = return $ reverse t
-    group _ _ = Left $ MismatchedParens s
+    simple = many1 letter >>= maybe (fail $ "Unknown unit") return . getUnit
 
-    expify (TUnit' u:TExp x:ts) = expify $ TUnit' (u**~x):ts
-    expify (t:ts) = t:expify ts
-    expify [] = []
+    group = string "(" *> unit <* string ")"
 
-    unify ((TGrp g):ts) = unify g >>= unify . (:ts)
-    unify (TUnit' u : TExp x :ts) = unify $ TUnit' (u**~x) : ts
-    unify (TUnit' u : TOp o : t : ts) = case t of
-      TGrp g -> unify g >>= \g' -> unify $ TUnit' u : TOp o : g' : ts
-      TUnit' u' -> let op = case o of { Mul -> (*~); Div -> (/~) } in
-                   unify $ TUnit' (op u u'):ts
-      _ -> Left $ SyntaxError s
+    compound = try binop <|> try expop
 
-    unify [u@(TUnit' _)] = return u
-    unify _ = Left $ SyntaxError s
+    expop = do
+      u <- group <|> simple
+      spaces
+      char '^'
+      spaces
+      n <- number
+      return $ u **~ n
 
-    getUnit (TUnit u) =  fmap TUnit' (getUnit' u)
-                     <?> (getPrefix u >>= \(p,u') ->
-                          fmap (TUnit' . p) (getUnit' u'))
-      where
-        getUnit' s = case M.lookup s units of
-          Nothing -> Left $ UnknownUnit s
-          Just s' -> Right s'
-        getPrefix = gp $ M.toList metricPrefixes
-          where gp ((p,pf):ps) s = case stripPrefix p s of
-                  Nothing -> gp ps s
-                  Just s' -> return (pf, s')
-                gp [] s = Left $ UnknownUnit s
-    getUnit t = return t
+    binop = do
+      u1 <- group <|> try expop <|> simple
+      spaces
+      op <- (char '*' >> return (*~)) <|> (char '/' >> return (/~))
+      spaces
+      u2 <- unit
+      return $ u1 `op` u2
 
-    Left _ <?> a = a
-    a@(Right _) <?> _ = a
+    number =  (char '-' >> fmap (negate . read) (many1 digit))
+          <|> fmap read (many1 digit)
 
 -- parser for quantities
-parseAmount :: String -> Either UParseError Double
-parseAmount a = case parse amount "" a of
-  Left err -> Left $ QuantityError a
-  Right d -> return d
+parseAmount :: String -> Either ParseError Double
+parseAmount = parse (amount <* eof)""
   where
     amount = signed <|> unsigned
     signed = char '-' >> fmap negate unsigned
@@ -81,19 +52,13 @@ parseAmount a = case parse amount "" a of
     dec = int >>= \i1 -> char '.' >> int >>= \i2 ->
       return $ read i1 + read i2 * (10 ** fromIntegral (negate $ length i2))
 
--- lexer used by parseUnit
-lexUnit :: String -> Either ParseError [Token]
-lexUnit = flip parse "" $
-  spaces >> (unit <|> op <|> exp <|> paren) `sepEndBy` spaces
-  where
-    unit = many1 letter >>= return . TUnit
+getUnit :: String -> Maybe Unit
+getUnit u =  M.lookup u units <|>
+  (getPrefix u >>= \(v, s') -> getUnit s' >>= return . v)
 
-    exp = char '^' >> spaces >> int >>= return . TExp
-    op =  (char '*' >> return (TOp Mul))
-      <|> (char '/' >> return (TOp Div))
-
-    int =  (char '-' >> many1 digit >>= return . negate . read)
-       <|> (many1 digit >>= return . read)
-    
-    paren = (char '(' >> return TPOpen) <|> (char ')' >> return TPClose)
+getPrefix :: String -> Maybe (Unit -> Unit, String)
+getPrefix s = do
+  (p, v) <- find ((`isPrefixOf` s) . fst) (M.toList metricPrefixes)
+  s' <- stripPrefix p s
+  return (v, s')
 

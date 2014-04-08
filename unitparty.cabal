@@ -49,5 +49,5 @@ executable unitparty
   -- other-modules:       
   
   -- Other library packages from which modules are imported.
-  build-depends:       base ==4.6.*, containers ==0.5.*, parsec ==3.1.*, QuickCheck ==2.6.*, HUnit ==1.2.*, random ==1.0.*
+  build-depends:       base ==4.6.*, containers ==0.5.*, parsec ==3.1.*, QuickCheck ==2.7.*, HUnit ==1.2.*, random ==1.0.*
   
