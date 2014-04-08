@@ -14,12 +14,10 @@ import qualified Data.Map as M
 data Opts = Opts { from    :: Maybe NamedUnit
                  , to      :: Maybe NamedUnit
                  , amount  :: Double
-                 , analyze :: Maybe NamedUnit
-                 , list    :: Bool
-                 , dyk     :: Bool
-                 , help    :: Bool
-                 , conversion :: Bool
+                 , doConversion :: Bool
+                 , actions :: [Action]
                  }
+
 data Action = Convert NamedUnit NamedUnit Double
             | Analyze NamedUnit | List | DYK | Help
 
@@ -42,25 +40,18 @@ parseArgs :: [String] -> Either String [Action]
 parseArgs args = case getOpt Permute options args of
   (o,_,[]) -> do
     opts <- foldM (flip ($)) defaults o
-    foldM (flip ($)) [] [ checkList opts
-                        , checkDyk opts
-                        , checkAna opts
-                        , checkConv opts
-                        ]
+    fmap actions $ setConv opts
   (_,_,es) -> Left . init $ concat es
 
   where
     checkPresent :: Maybe a -> String -> Either String a
-    checkPresent Nothing  = Left . ("Missing required parameter: "++)
+    checkPresent Nothing  = Left . ("Missing required parameter for conversion: "++)
     checkPresent (Just a) = const $ return a
-
-    checkList o l = if list o then return (List:l) else return l
-    checkDyk  o l = if dyk  o then return (DYK:l)  else return l
-    checkAna  o l = return $ maybe l ((:l) . Analyze) (analyze o)
-    checkConv o l = if conversion o then do f <- checkPresent (from o)   "from"
-                                            t <- checkPresent (to o)     "to"
-                                            return $ Convert f t (amount o) : l
-                                    else return l
+    setConv o = if doConversion o then do f <- checkPresent (from o)   "source unit"
+                                          t <- checkPresent (to o)     "destination unit"
+                                          let conv = Convert f t (amount o)
+                                          return o{actions=conv:actions o}
+                                  else return o
 
 doAction :: Action -> IO ()
 doAction action = case action of
@@ -92,7 +83,7 @@ doAction action = case action of
 
 
 defaults :: Opts
-defaults = Opts Nothing Nothing 1 Nothing False False False False
+defaults = Opts Nothing Nothing 1 False []
 
 options :: [OptDescr (Opts -> Either String Opts)]
 options =
@@ -112,12 +103,12 @@ options =
     setAmt a o  = getParsed parseAmount a >>= \a ->
                     return o{amount = a} >>= setConv
     setAna a o  = getParsed parseUnit a >>= \u ->
-                    return o{analyze = Just $ NU a u}
+                    return o{actions=Analyze (NU a u):actions o}
 
-    setDyk  o = return o{dyk=True}
-    setList o = return o{list=True}
-    setHelp o = return o{help=True}
-    setConv o = return o{conversion=True}
+    setDyk  o = return o{actions=DYK:actions o}
+    setList o = return o{actions=List:actions o}
+    setHelp o = return o{actions=Help:actions o}
+    setConv o = return o{doConversion=True}
 
     getParsed p u = case p u of
       Left err -> Left $ show err
