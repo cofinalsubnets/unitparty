@@ -26,11 +26,11 @@ infixr 7 **~
 
 -- unit subtraction. ditto the comment re: dimensionless units.
 (-~) :: Unit -> Unit -> Unit
-u1 -~ (U u2) = u1 +~ (U $ M.map negate u2)
+u1 -~ (U u2) = u1 +~ U (M.map negate u2)
 
 -- unit multiplication, as in newton*metre
 (*~) :: Unit -> Unit -> Unit
-(U s1) *~ (U s2) = U . M.fromListWith (+) $ concatMap mulTerms $ M.toList s1
+(U s1) *~ (U s2) = U . M.fromListWith (+) . concatMap mulTerms $ M.toList s1
   where mulTerms (t,c) = map (\(t',c') -> (dimMul t t', c * c')) $ M.toList s2
         dimMul (D d1) (D d2) =  D $ M.unionWith (+) d1 d2
 
@@ -40,15 +40,12 @@ u1 /~ u2 = u1 *~ uInvert u2
 
 -- unit exponentiation, as in metre/second^2
 (**~) :: Unit -> Int -> Unit
-s **~ x
- | x  < 0 = uInvert s **~ abs x
- | x  > 0 = iterate (s *~) s !! (x - 1)
- | x == 0 = constant 1
+s **~ x | x < 0     = uInvert s **~ abs x
+        | otherwise = iterate (s *~) (constant 1) !! x
 
 -- unit inversion, as in 1/second
 uInvert :: Unit -> Unit
 uInvert (U u) = U $ M.map (1/) $ M.mapKeys (\(D d) -> D $ M.map negate d) u
-
 
 -- helpers for defining units
 unit :: Dim -> Unit
@@ -149,7 +146,7 @@ puncheon   = constant 84 *~ gallon
 tierce     = constant 42 *~ gallon
 rundlet    = constant 18 *~ gallon
 firkin     = constant 9 *~ gallon
-dessertspoon = constant (1/12) *~ gill -- i guess if you don't like dessert
+dessertspoon = constant (1/12) *~ gill
 
 -- weight
 pound   = constant 0.45359238 *~ kilogram
@@ -430,22 +427,17 @@ pluralUnits :: Map String Unit
 pluralUnits = M.union atypicalPlurals plurals
   where
 
-    atypicalPlurals = M.fromList $
-      [ ("feet", foot)
-      , ("grays", gray) -- pluralize converts this to "graies"
-      ]
-
+    atypicalPlurals = M.fromList [ ("feet", foot), ("grays", gray) ]
     falsePlurals = ["foots", "graies"]
 
-    plurals = M.fromList . map (\(k,v) -> (pluralize k,v)) $
-      M.toList $ foldl (flip M.delete) baseUnits falsePlurals
+    plurals = M.fromList . map (\(k,v) -> (pluralize k,v)) . M.toList $
+      foldl (flip M.delete) baseUnits falsePlurals
 
-    pluralize s
-     | "us" `isSuffixOf` s = init (init s) ++ "i"
-     | any (flip isSuffixOf s) ["s", "x", "z", "ch"] = s ++ "es"
-     | "y"  `isSuffixOf` s = init s ++ "ies"
-     | "um" `isSuffixOf` s = init (init s) ++ "a"
-     | otherwise = s ++ "s"
+    pluralize s | "us" `isSuffixOf` s = init (init s) ++ "i"
+                | any (flip isSuffixOf s) ["s", "x", "z", "ch"] = s ++ "es"
+                | "y"  `isSuffixOf` s = init s ++ "ies"
+                | "um" `isSuffixOf` s = init (init s) ++ "a"
+                | otherwise = s ++ "s"
 
 units :: Map String Unit
 units = M.union baseUnits pluralUnits

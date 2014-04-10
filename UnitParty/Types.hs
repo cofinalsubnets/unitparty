@@ -30,9 +30,9 @@ newtype Dimensionality = D (Map Dim Int) deriving (Eq, Ord)
 
 instance Show Dimensionality where
   show (D d) = intercalate "*" . map show' . M.toList $ M.filter (/=0) d
-    where show' (d, p) = case p of 0 -> ""
-                                   1 -> show d
-                                   _ -> show d ++ "^" ++ show p
+    where show' (i, p) = case p of 0 -> ""
+                                   1 -> show i
+                                   _ -> show i ++ "^" ++ show p
 
 instance Monoid Dimensionality where
   mempty = D mempty
@@ -43,7 +43,7 @@ newtype Unit = U (Map Dimensionality Double) deriving (Ord, Eq)
 
 instance Show Unit where
   show (U m) = intercalate " + " . filter (not . null) . map show'
-             . reverse . M.toList $ m
+             . reverse $ M.toList m
     where show' (t, c) = case c of 0 -> ""
                                    1 -> show t
                                    _ -> show c ++ show t
@@ -52,7 +52,6 @@ instance Monoid Unit where
   mempty = U mempty
   mappend (U u1) (U u2) = U $ mappend u1 u2
 
--- type for algebraic (non-parsing related) conversion errors
 data ConversionError = Incommensurable Dimensionality Dimensionality
                      | MixedDegrees Unit
 

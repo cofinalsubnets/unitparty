@@ -7,7 +7,6 @@ import System.Exit
 import System.IO
 import System.Console.GetOpt
 import Control.Monad
-import Data.Maybe (fromJust)
 import System.Random
 import qualified Data.Map as M
 
@@ -44,14 +43,11 @@ parseArgs args = case getOpt Permute options args of
   (_,_,es) -> Left . init $ concat es
 
   where
-    checkPresent :: Maybe a -> String -> Either String a
-    checkPresent Nothing  = Left . ("Missing required parameter for conversion: "++)
-    checkPresent (Just a) = const $ return a
-    setConv o = if doConversion o then do f <- checkPresent (from o)   "source unit"
-                                          t <- checkPresent (to o)     "destination unit"
-                                          let conv = Convert f t (amount o)
-                                          return o{actions=conv:actions o}
-                                  else return o
+    setConv o@(Opts f t a True as) = case (f, t) of
+      (Just f', Just t') -> return o { actions = Convert f' t' a : as }
+      (Just _, _)        -> Left "Missing destination unit"
+      _                  -> Left "Missing source unit"
+    setConv o = return o
 
 doAction :: Action -> IO ()
 doAction action = case action of
@@ -65,21 +61,15 @@ doAction action = case action of
   List -> mapM_ putStrLn $ M.keys baseUnits
 
   Analyze u -> putStrLn $
-    name u ++ ": " ++ show (fst . (\(U u) -> M.findMax u) $ unit u)
+    name u ++ ": " ++ show (fst . (\(U n) -> M.findMax n) $ unit u)
 
-  DYK -> do
-    (u1, u2) <- randomUnits
-    putStrLn "Did you know ..."
-    putStr "  "
-    doAction $ Convert u1 u2 1
-    where
-      randomUnits = do
-        u1@(NU _ a) <- randomUnit baseList
-        u2@(NU _ b) <- randomUnit pluralList
-        if equidimensional a b then return (u1, u2) else randomUnits
-      randomUnit l = randomRIO (0, length l - 1) >>= return . uncurry NU . (l!!)
-      pluralList = M.toList pluralUnits
-      baseList   = M.toList baseUnits
+  DYK -> do putStrLn "Did you know... "
+            randomUnits >>= doAction . ($1) . uncurry Convert
+  where
+    randomUnits = do
+      [(n1,u1), (n2,u2)] <- mapM (sample . M.toList) $ [baseUnits, pluralUnits]
+      if equidimensional u1 u2 then return (NU n1 u1, NU n2 u2) else randomUnits
+    sample l = fmap (l!!) $ randomRIO (0, length l - 1)
 
 
 defaults :: Opts
@@ -90,7 +80,7 @@ options =
   [ Option "f" ["from"]    (ReqArg setFrom "FROM")    "unit to convert from"
   , Option "t" ["to"]      (ReqArg setTo   "TO")      "unit to convert to"
   , Option "a" ["amount"]  (ReqArg setAmt  "AMOUNT")  "amount to convert"
-  , Option []  ["analyze"] (ReqArg setAna  "ANALYZE")  "print dimensions"
+  , Option []  ["analyze"] (ReqArg setAna  "ANALYZE") "print dimensions"
   , Option []  ["dyk"]     (NoArg setDyk)             "print a random did-you-know"
   , Option []  ["list"]    (NoArg setList)            "list known units"
   , Option "h" ["help"]    (NoArg setHelp)            "show this message"
@@ -100,8 +90,8 @@ options =
                     return o{from = Just $ NU f u} >>= setConv
     setTo t o   = getParsed parseUnit t >>= \u ->
                     return o{to = Just $ NU t u} >>= setConv
-    setAmt a o  = getParsed parseAmount a >>= \a ->
-                    return o{amount = a} >>= setConv
+    setAmt a o  = getParsed parseAmount a >>= \q ->
+                    return o{amount = q} >>= setConv
     setAna a o  = getParsed parseUnit a >>= \u ->
                     return o{actions=Analyze (NU a u):actions o}
 

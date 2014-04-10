@@ -5,7 +5,6 @@ import UnitParty.Units
 
 import Text.ParserCombinators.Parsec hiding ((<|>))
 import Control.Applicative hiding (many, optional)
-import Control.Monad ((>=>))
 import Data.List (find, isPrefixOf, stripPrefix)
 import Data.Char (toLower)
 
@@ -22,43 +21,29 @@ parseUnit = parse (unit <* eof) "" . map toLower
 
     compound = try binop <|> try expop
 
-    expop = do
-      u <- group <|> simple
-      spaces
-      char '^'
-      spaces
-      n <- number
-      return $ u **~ n
+    expop = (group <|> simple) >>= \u ->
+      spaces >> char '^' >> spaces >> number >>= return . (u**~)
 
-    binop = do
-      u1 <- group <|> try expop <|> simple
-      spaces
-      op <- (char '*' >> return (*~)) <|> (char '/' >> return (/~))
-      spaces
-      u2 <- unit
-      return $ u1 `op` u2
+    binop = flip ($) <$> ((group <|> try expop <|> simple) <* spaces)
+                     <*> ((char '*' >> return (*~)) <|> (char '/' >> return (/~)))
+                     <*> unit
 
-    number =  (char '-' >> fmap (negate . read) (many1 digit))
-          <|> fmap read (many1 digit)
+    number =  fmap (read . concat) $ sequence [opt (string "-"), many1 digit]
 
 -- parser for quantities
 parseAmount :: String -> Either ParseError Double
-parseAmount = parse (amount <* eof)""
-  where
-    amount = signed <|> unsigned
-    signed = char '-' >> fmap negate unsigned
-    unsigned = try dec <|> (int >>= return . read)
-    int = many1 digit
-    dec = int >>= \i1 -> char '.' >> int >>= \i2 ->
-      return $ read i1 + read i2 * (10 ** fromIntegral (negate $ length i2))
+parseAmount = parse (num <* eof) ""
+  where num = fmap (read . concat) $ sequence
+          [opt (string "-"), many1 digit, opt (string "."), opt (many1 digit)]
 
 getUnit :: String -> Maybe Unit
 getUnit u =  M.lookup u units <|>
-  (getPrefix u >>= \(v, s') -> getUnit s' >>= return . v)
+  (getPrefix u >>= \(v, s') -> fmap v $ getUnit s')
 
 getPrefix :: String -> Maybe (Unit -> Unit, String)
 getPrefix s = do
   (p, v) <- find ((`isPrefixOf` s) . fst) (M.toList metricPrefixes)
-  s' <- stripPrefix p s
-  return (v, s')
+  fmap ((,) v) $ stripPrefix p s
+
+opt = fmap (maybe "" id) . optionMaybe
 
