@@ -8,17 +8,23 @@ import Test.HUnit
 import qualified Data.Map as M
 import Data.Monoid
 import System.Exit
-import Control.Monad (when)
+import Data.Either
 
 -- this file contains tests running on both QuickCheck and HUnit.
 main = do
-  putStrLn "running QuickCheck ..."
-  qcresults <- mapM quickCheckResult properties
-  putStrLn "running HUnit ..."
-  huresults <- runTestTT tests
-  when (any isFailure qcresults || failures huresults /= 0) exitFailure
-  where isFailure x = case x of { Failure {} -> True; _ -> False }
 
+  putStrLn "running QuickCheck ..."
+  quickcheckPasses <- runQuickCheck
+
+  putStrLn "running HUnit ..."
+  hunitPasses <- runHUnit
+
+  if quickcheckPasses && hunitPasses then exitSuccess else exitFailure
+
+runQuickCheck = mapM quickCheckResult properties >>= return . not . any failed
+  where failed Failure {} = True; failed _ = False
+
+runHUnit = runTestTT tests >>= return . (==0) . failures
 
 -- QuickCheck
 
@@ -28,27 +34,18 @@ properties = [
   , conversion
   ]
 
-instance Arbitrary Unit where
-  -- just pick one from the units list, we ain't fancy
-  arbitrary = elements $ M.elems baseUnits
+instance Arbitrary Unit where arbitrary = elements $ M.elems baseUnits
+instance CoArbitrary Unit where coarbitrary = coarbitraryShow
 
-instance CoArbitrary Unit where coarbitrary = coarbitraryShow -- :P
-
-commensurability u1 u2 = equidimensional u1 u2 ==>
-  isRight (convert u1 u2)
-
-incommensurability u1 u2 = not (equidimensional u1 u2) ==>
-  isLeft (convert u1 u2)
+commensurability a b   =      equidimensional a b  ==> isRight (convert a b)
+incommensurability a b = not (equidimensional a b) ==> isLeft  (convert a b)
 
 conversion a@(U u1) b@(U u2) = equidimensional a b ==>
   let ((_,coeff1),(_,coeff2)) = (M.findMax u1, M.findMax u2)
-      cterm           = M.findWithDefault 0 mempty
-      (c1,c2)         = (cterm u1, cterm u2)
-      Right conv      = convert a b
+      cterm      = M.findWithDefault 0 mempty
+      (c1, c2)   = (cterm u1, cterm u2)
+      Right conv = convert a b
   in conv 100 == ((100 - c1) * coeff1) / coeff2 + c2
-
-isRight x = case x of { Right _ -> True; _ -> False }
-isLeft = not . isRight
 
 
 -- HUnit
@@ -63,16 +60,19 @@ tests = TestList [
   , "second*(grain*mile)" --> "gram*year*metre" ~? "more grouping"
   , "(((second/hour)))" --> "meter/(megafoot)" ~? "nested parens"
   , "second * meter * mile / watt" --> "years^2*inches^2/joule" ~? "multiple ops"
+  , "watts / meter ^ 2" --> "btus / (hour*foot^2)" ~? "exponentiation precedes multiplication"
+  , "watts / meter ^ 2" --> "btus / (foot^2*hour)" ~? "exponentiation precedes multiplication 2"
+  , " watts / meter ^ 2 " --> "BTUs/foot^2/hour" ~? "division is left-associative"
   ]
 
 
 -- helpers
 
 unit :: String -> Unit
-unit s = case parseUnit s of Right u -> u
+unit = either (error . show) id . parseUnit
 
 conv :: String -> String -> Double -> Double
-conv f t = case convert (unit f) (unit t) of Right c -> c
+conv f t = either (error . show) id $ convert (unit f) (unit t)
 
 -- this is haskell so let's make egregious use of infix operators
 
@@ -80,11 +80,10 @@ infixl 5 =~
 infixl 6 -->, -/>
 
 (=~) :: Double -> Double -> Bool
-(=~) = inDelta (10 ** (-6)) where inDelta d f1 f2 = abs (f1 - f2) < d
+a =~ b = abs (a - b) < 1e-6
 
 (-/>) :: String -> String -> Bool
 f -/> t = isLeft $ convert (unit f) (unit t)
 
 (-->) :: String -> String -> Bool
 f --> t = not $ f -/> t
-

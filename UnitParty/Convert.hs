@@ -43,4 +43,3 @@ dimCheck (U u1) (U u2) = join . find isJust $ zipWith check (ds u1) (ds u2)
 mixCheck :: Unit -> Maybe ConversionError
 mixCheck u@(U a) | M.size (M.delete mempty a) == 1 = Nothing
                  | otherwise = Just (MixedDegrees u)
-

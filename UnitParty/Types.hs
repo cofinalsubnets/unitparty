@@ -13,7 +13,7 @@ import Data.List (intercalate)
 
 -- fundamental dimensions
 data Dim = Mass | Distance | Time | Current
-         | Temperature | Amount | LuminousIntensity
+         | Temperature | Quantity | LuminousIntensity
          deriving (Eq, Ord, Enum, Bounded)
 
 instance Show Dim where
@@ -22,7 +22,7 @@ instance Show Dim where
   show Mass        = "kg"
   show Temperature = "K"
   show Current     = "A"
-  show Amount      = "mol"
+  show Quantity    = "mol"
   show LuminousIntensity = "cd"
 
 -- dimensions -> their degrees
@@ -54,9 +54,4 @@ instance Monoid Unit where
 
 data ConversionError = Incommensurable Dimensionality Dimensionality
                      | MixedDegrees Unit
-
-instance Show ConversionError where
-  show (Incommensurable d1 d2) = "Incommensurable units: "
-                              ++ show d1 ++ ", " ++ show d2
-  show (MixedDegrees u) = "Can't evaluate mixed nonzero degrees: " ++ show u
-
+                     deriving Show
